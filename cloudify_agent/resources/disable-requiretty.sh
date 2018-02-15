@@ -1,22 +1,29 @@
-#!/bin/bash
-MAYBE_SUDO=$1
-grep -i ubuntu /proc/version > /dev/null
-if [ "$?" -eq "0" ]; then
-    # ubuntu
-    echo Running on Ubuntu
-    if ${MAYBE_SUDO} grep -q -E '[^!]requiretty' /etc/sudoers; then
-        echo creating sudoers user file
-        echo "Defaults:`whoami` !requiretty" | ${MAYBE_SUDO} tee /etc/sudoers.d/`whoami` >/dev/null
-        ${MAYBE_SUDO} chmod 0440 /etc/sudoers.d/`whoami`
-    else
-        echo No requiretty directive found, nothing to do
-    fi
+#!/bin/bash -e
+
+# If /etc/sudoers.d exists, add a file there to disable TTY requirement
+# for the current user.
+# Otherwise, if /etc/sudoers exist, add a line there to disable TTY requirement
+# for the current user.
+# Otherwise, do nothing.
+
+AGENT_USER=$1
+MAYBE_SUDO=$2
+
+SUDOERS_D="/etc/sudoers.d"
+SUDOERS="/etc/sudoers"
+DISABLETTY_LINE="Defaults:${AGENT_USER} !requiretty"
+
+if [ -z "${MAYBE_SUDO}" ]; then
+    MAYBE_SUDO="/bin/sh -c"
+fi
+
+if [ -d "${SUDOERS_D}" ]; then
+    MY_SUDOERS=${SUDOERS_D}/cfy-${AGENT_USER}
+    echo "${SUDOERS_D} exists; adding ${MY_SUDOERS} to disable TTY requirement for ${AGENT_USER}"
+    echo ${DISABLETTY_LINE} | ${MAYBE_SUDO} 'EDITOR="tee" visudo -f '${MY_SUDOERS}
+elif [ -f "${SUDOERS}" ]; then
+    echo "${SUDOERS} exists; disabling TTY requirement for ${AGENT_USER}"
+    echo ${DISABLETTY_LINE} | ${MAYBE_SUDO} 'EDITOR="tee -a" visudo -f '${SUDOERS}
 else
-    # other - modify sudoers file
-    if [ ! -f "/etc/sudoers" ]; then
-        echo "sudoers file not found in /etc/sudoers"
-        exit 1
-    fi
-    echo Setting privileged mode
-    ${MAYBE_SUDO} sed -i 's/^Defaults.*requiretty/#&/g' /etc/sudoers
+    echo "Neither ${SUDOERS_D} nor ${SUDOERS} found; skipping"
 fi
